@@ -91,4 +91,8 @@ def start_cleanup_timer():
 if __name__ == "__main__":
     start_cleanup_timer()
 
-    app.run(debug=True)
+    # app.run(debug=True)
+    # Get the port from the environment variable, default to 5000 if not set
+    port = int(os.environ.get('PORT', 5000))
+    # Run Flask on 0.0.0.0 and the port specified by Render
+    app.run(host='0.0.0.0', port=port)
