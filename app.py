@@ -5,6 +5,14 @@ import os,time
 import zipfile
 from datetime import datetime
 from common_fuctions import *
+
+from flask import Flask, render_template, request
+import pandas as pd
+import json
+import os
+from werkzeug.utils import secure_filename
+import pyarrow.parquet as pq
+import fastavro
 app = Flask(__name__)
 
 # Update this to your main data generation logic
@@ -87,6 +95,70 @@ def start_cleanup_timer():
     cleanup_thread = threading.Thread(target=cleanup_files)
     cleanup_thread.daemon = True  # Daemonize the thread so it exits when the app shuts down
     cleanup_thread.start()
+
+# #################  new page 
+ALLOWED_EXTENSIONS = {'csv', 'json', 'txt', 'xlsx', 'avro', 'parquet'}
+
+# Function to check allowed file extensions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def read_file(file_path, file_extension):
+    if file_extension == 'csv':
+        return pd.read_csv(file_path)
+    elif file_extension == 'json':
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    elif file_extension == 'txt':
+        with open(file_path, 'r') as f:
+            return f.read()
+    elif file_extension == 'xlsx':
+        return pd.read_excel(file_path)  # Using pandas to read Excel files
+    elif file_extension == 'avro':
+        with open(file_path, 'rb') as f:
+            reader = fastavro.reader(f)
+            return [record for record in reader]
+    elif file_extension == 'parquet':
+        table = pq.read_table(file_path)
+        return table.to_pandas()
+
+@app.route('/reader', methods=['GET', 'POST'])
+def index1():
+    file_uploaded = False
+    file_type = None
+    data_html = None
+
+    if request.method == 'POST':
+        # Check if file is part of the form
+        if 'file' not in request.files:
+            return render_template('reader.html', file_uploaded=False)
+        file = request.files['file']
+
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join('uploads', filename)
+
+            # Save file to the 'uploads' folder
+            file.save(file_path)
+
+            # Identify file type and read the content
+            file_extension = filename.rsplit('.', 1)[1].lower()
+            file_type = file_extension.upper()
+
+            data = read_file(file_path, file_extension)
+
+            # Display file content in a readable format
+            if file_extension in ['csv', 'xlsx', 'parquet']:
+                data_html = data.head(1000).to_html(classes='table table-striped')
+            else:
+                data_html = json.dumps(data, indent=2)  # For JSON, Avro, TXT
+
+            file_uploaded = True
+
+    return render_template('reader.html', file_uploaded=file_uploaded, file_type=file_type, data_html=data_html)
+# #################  new page 
+
+
 
 if __name__ == "__main__":
     start_cleanup_timer()
