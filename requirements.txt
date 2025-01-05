@@ -4,3 +4,4 @@ Flask==2.2.3
 pandas==2.2.3
 pyarrow==18.1.0
 Werkzeug==2.2.3
+fastavro==1.10.0
