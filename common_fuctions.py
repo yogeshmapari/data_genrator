@@ -101,23 +101,62 @@ def save_to_parquet(data, output_file):
     table = pa.Table.from_pandas(df)
     pq.write_table(table, output_file)
 
-def save_to_avro(data, schema, output_file):
+def get_avro_type(value):
+    if value is None:
+        return ["null"]
+    elif isinstance(value, str):
+        return "string"
+    elif isinstance(value, int):
+        return "long"  # Avro uses "long" for integers (int64 in BigQuery)
+    elif isinstance(value, float):
+        return "float"
+    elif isinstance(value, bool):
+        return "boolean"
+    elif isinstance(value, bytes):
+        return "bytes"
+    else:
+        # For unknown types, assume string by default
+        return "string"
+
+# Function to generate the schema dynamically from the data
+def generate_schema_from_data(data):
+    if not data:
+        raise ValueError("Data is empty, cannot generate schema.")
+
+    # Extract columns from the first row of data (assuming all rows have the same structure)
+    schema = []
+    for column_name, value in data[0].items():
+        avro_type = get_avro_type(value)
+        schema.append({
+            "name": column_name,
+            "type": avro_type
+        })
+    return schema
+
+# Function to save data to Avro format
+def save_to_avro(data, output_file):
+    # Generate the Avro schema from the input data
     avro_schema = {
         "type": "record",
         "name": "TableRecord",
-        "fields": [
-            {"name": col['name'], "type": "string" if col['type'] in ['STRING', 'DATE', 'TIMESTAMP', 'DATETIME', 'TIME', 'GEOGRAPHY'] else "int" if col['type'] == 'INTEGER' else "float" if col['type'] in ['FLOAT', 'NUMERIC', 'BIGNUMERIC'] else "boolean" if col['type'] == 'BOOLEAN' else "bytes" if col['type'] == 'BYTES' else "null"}
-            for col in schema
-        ]
+        "fields": generate_schema_from_data(data)
     }
 
+    # Parse the schema
     parsed_schema = avro.schema.parse(json.dumps(avro_schema))
+
+    # Write the data to the Avro file
     with open(output_file, 'wb') as avro_file:
         writer = avro.datafile.DataFileWriter(avro_file, avro.io.DatumWriter(), parsed_schema)
+        
+        # Write each row in the data to the Avro file
         for row in data:
-            writer.append(row)
+            avro_row = {}
+            for column_name, value in row.items():
+                avro_row[column_name] = value  # Directly append the data
+            writer.append(avro_row)
+        
         writer.close()
-
 def create_partitioned_path(output_dir):
     now = datetime.now()
     year = now.strftime("%Y")
@@ -155,7 +194,7 @@ def generate_files(schema_file, num_rows,parent_folder, file_type, num_files, ou
       elif file_type == 'parquet':
           save_to_parquet(data, output_file)
       elif file_type == 'avro':
-          save_to_avro(data, schema, output_file)
+          save_to_avro(data,  output_file)
       else:
           raise ValueError(f"Unsupported file type: {file_type}")
     return out_file_list
