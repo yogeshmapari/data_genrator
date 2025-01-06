@@ -21,8 +21,10 @@ def read_schema_from_csv(schema_file):
         for row in reader:
             schema.append({'name': row['column_name'], 'type': row['data_type']})
     return schema
-
-def generate_data(schema, num_rows, database_type='bigquery'):
+def timestamp_to_millis(dt):
+    """Convert a datetime object to milliseconds since epoch."""
+    return int(dt.timestamp() * 1000)
+def generate_data(schema, num_rows, file_type,database_type='bigquery',):
     data = []
 
     for _ in range(num_rows):
@@ -33,29 +35,29 @@ def generate_data(schema, num_rows, database_type='bigquery'):
             dtype = column['type'].upper()
 
             # Context-aware data generation
-            if "name" in name:
+            if "name" in name and dtype == 'STRING':
                 row[column['name']] = fake.name()
-            elif "email" in name:
+            elif "email" in name  and dtype == 'STRING':
                 row[column['name']] = fake.email()
-            elif "phone" in name or "contact" in name:
+            elif "phone" in name or "contact" in name  and dtype == 'INT64':
                 row[column['name']] = fake.phone_number()
-            elif "address" in name:
+            elif "address" in name  and dtype == 'STRING':
                 row[column['name']] = fake.address()
-            elif "city" in name:
+            elif "city" in name  and dtype == 'STRING':
                 row[column['name']] = fake.city()
-            elif "state" in name:
+            elif "state" in name  and dtype == 'STRING': 
                 row[column['name']] = fake.state()
-            elif "country" in name:
+            elif "country" in name and dtype == 'STRING':
                 row[column['name']] = fake.country()
-            elif "zipcode" in name or "postal" in name:
+            elif "zipcode" in name or "postal" in name  and dtype == 'INT64':
                 row[column['name']] = fake.zipcode()
             elif "date" in name and dtype == 'DATE':
                 row[column['name']] = fake.date()
             elif "time" in name and dtype in ['TIME', 'DATETIME']:
                 row[column['name']] = fake.iso8601()
-            elif "price" in name or "amount" in name or dtype in ['NUMERIC', 'FLOAT']:
+            elif ("price" in name or "amount" in name) and dtype in ['NUMERIC', 'FLOAT']:
                 row[column['name']] = round(random.uniform(1.0, 1000000.0), 2)
-            elif "id" in name or dtype in ['INTEGER', 'INT64']:
+            elif "id" in name and dtype in ['INTEGER', 'INT64']:
                 row[column['name']] = random.randint(1, 100000)
             elif dtype == 'BOOLEAN':
                 row[column['name']] = random.choice([True, False])
@@ -65,13 +67,20 @@ def generate_data(schema, num_rows, database_type='bigquery'):
                 row[column['name']] = f"POINT({random.uniform(-180.0, 180.0)} {random.uniform(-90.0, 90.0)})"
             elif dtype == 'BIGNUMERIC':
                 row[column['name']] = round(random.uniform(1.0, 1000000000.0), 38)
+            elif dtype == 'TIMESTAMP' and file_type.lower() =="avro":
+                row[column['name']] = timestamp_to_millis(fake.date_time_this_year())
+            elif dtype == 'TIMESTAMP' :
+                row[column['name']] = fake.date_time().isoformat()               
+
             else:
                 # Fallback for unspecified cases
                 row[column['name']] = fake.word()
 
             # Database-specific adjustments
             if database_type == 'bigquery':
-                if dtype in ['DATETIME', 'TIMESTAMP']:
+                if dtype == 'TIMESTAMP' and file_type.lower() =="avro":
+                    row[column['name']] = timestamp_to_millis(fake.date_time_this_year())
+                elif dtype in ['DATETIME']:
                     row[column['name']] = fake.iso8601()
                 elif dtype == 'DATE':
                     row[column['name']] = fake.date()
@@ -114,6 +123,12 @@ def get_avro_type(value):
         return "boolean"
     elif isinstance(value, bytes):
         return "bytes"
+    elif isinstance(value, datetime):
+        # Handle timestamps using Avro's logical type
+        return {"type": "long", "logicalType": "timestamp-micros"}
+    elif isinstance(value, str) and "T" in value:
+        # Handle timestamps using Avro's logical type
+        return {"type": "long", "logicalType": "timestamp-micros"}
     else:
         # For unknown types, assume string by default
         return "string"
@@ -185,7 +200,7 @@ def generate_files(schema_file, num_rows,parent_folder, file_type, num_files, ou
     partitioned_path = create_partitioned_path(output_dir)
 
     for i in range(num_files):
-      data = generate_data(schema, num_rows)
+      data = generate_data(schema, num_rows,file_type)
       timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
       output_file = os.path.join(partitioned_path, f'{parent_folder}_{timestamp}_{i+1}.{file_type}')
       out_file_list.append(output_file)
