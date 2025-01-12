@@ -14,6 +14,53 @@ from werkzeug.utils import secure_filename
 import pyarrow.parquet as pq
 import fastavro
 app = Flask(__name__)
+from flask import Flask, render_template, request, jsonify
+import pandas as pd
+import sqlite3
+import os
+
+app = Flask(__name__)
+UPLOAD_FOLDER = "uploads"
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# Ensure uploads folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/editor", methods=["GET", "POST"])
+def index3():
+    if request.method == "POST":
+        # Handle file upload
+        if "file" in request.files:
+            file = request.files["file"]
+            if file.filename.endswith(".csv"):
+                file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+                file.save(file_path)
+                return jsonify({"message": "File uploaded successfully!", "file_path": file_path})
+            return jsonify({"error": "Only CSV files are allowed!"}), 400
+    return render_template("editor.html")
+
+@app.route("/execute_query", methods=["POST"])
+def execute_query():
+    data = request.get_json()
+    query = data.get("query")
+    file_path = data.get("file_path")
+
+    try:
+        # Load CSV into SQLite for SQL execution
+        df = pd.read_csv(file_path)
+        
+        conn = sqlite3.connect(":memory:")
+        df.to_sql("uploaded_data", conn, index=False, if_exists="replace")
+
+        # Execute query
+        result = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Return results as JSON
+        return jsonify(result.to_dict(orient="records"))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
 
 # Update this to your main data generation logic
 def generate_files1(schema_file, num_rows, file_type, num_files, output_dir):

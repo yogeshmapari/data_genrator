@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Query Executor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #6c5ce7, #ff6b81);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            width: 85%;
+            height: 90%;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .left-panel {
+            width: 300px;
+            background-color: #280021;
+            color: white;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            border-right: 2px solid #ddd;
+        }
+
+        .left-panel h2 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #f39c12;
+        }
+
+        .left-panel input[type="file"] {
+            margin-bottom: 20px;
+            padding: 8px;
+            background-color: #7d0b0b;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .left-panel button {
+            background-color: #1abc9c;
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .left-panel button:hover {
+            background-color: #16a085;
+        }
+
+        .middle-panel {
+            flex-grow: 1;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .middle-panel h2 {
+            margin-bottom: 20px;
+            color: #3498db;
+        }
+
+        .sql-editor {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border: 2px solid #3498db;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+            color: #09ff0d;
+            transition: border-color 0.3s ease;
+        }
+
+        .sql-editor:focus {
+            border-color: #1abc9c;
+            outline: none;
+        }
+
+        .bottom-panel {
+            padding: 20px;
+            flex-grow: 1;
+            background-color: #f9f9f9;
+            border-top: 2px solid #3498db;
+            margin-top: 20px;
+            border-radius: 8px;
+        }
+
+        .bottom-panel h2 {
+            margin-bottom: 20px;
+            color: #9b59b6;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+            font-size: 16px;
+        }
+
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+
+        td {
+            background-color: #fafafa;
+        }
+
+        .scrollable {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .message {
+            color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: File Upload -->
+        <div class="left-panel">
+            <h2>Uploaded Files</h2>
+            <input type="file" id="fileInput">
+            <button onclick="uploadFile()">Upload File</button>
+            <p id="uploadStatus"></p>
+            <div id="fileName"></div>
+        </div>
+
+        <!-- Middle Panel: SQL Editor and Results -->
+        <div class="middle-panel">
+            <h2>SQL Query</h2>
+            <textarea id="sqlQuery" class="sql-editor" placeholder="Enter your SQL query here..."></textarea>
+            <button onclick="executeQuery()">Execute Query</button>
+
+            <!-- Query Results Section -->
+            <div class="bottom-panel">
+                <h2>Query Results</h2>
+                <div class="scrollable">
+                    <table id="resultsTable">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let uploadedFilePath = "";
+        let fileName = "";
+
+        // Handle file upload
+        function uploadFile() {
+            const fileInput = document.getElementById("fileInput").files[0];
+            const formData = new FormData();
+            formData.append("file", fileInput);
+
+            fetch("/editor", {
+                method: "POST",
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.file_path) {
+                    uploadedFilePath = data.file_path;
+                    fileName = data.file_name;
+                    document.getElementById("uploadStatus").textContent = "File uploaded successfully!";
+                    document.getElementById("fileName").textContent = `Using file: ${fileName}`;
+                } else {
+                    document.getElementById("uploadStatus").textContent = data.error;
+                }
+            });
+        }
+
+        // Execute the SQL query
+        function executeQuery() {
+            const query = document.getElementById("sqlQuery").value;
+
+            fetch("/execute_query", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ query, file_path: uploadedFilePath }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    const table = document.getElementById("resultsTable");
+                    const thead = table.querySelector("thead");
+                    const tbody = table.querySelector("tbody");
+
+                    // Clear previous results
+                    thead.innerHTML = "";
+                    tbody.innerHTML = "";
+
+                    // Populate table with results
+                    if (data.length > 0) {
+                        const headers = Object.keys(data[0]);
+                        const headerRow = document.createElement("tr");
+                        headers.forEach(header => {
+                            const th = document.createElement("th");
+                            th.textContent = header;
+                            headerRow.appendChild(th);
+                        });
+                        thead.appendChild(headerRow);
+
+                        data.forEach(row => {
+                            const tr = document.createElement("tr");
+                            headers.forEach(header => {
+                                const td = document.createElement("td");
+                                td.textContent = row[header];
+                                tr.appendChild(td);
+                            });
+                            tbody.appendChild(tr);
+                        });
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
